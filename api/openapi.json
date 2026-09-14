@@ -1,0 +1,457 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "PC-Kenya Knowledge Hub API Server",
+    "description": "API contract for metadata synchronization between Population Council Kenya Knowledge Hub and headless website integration.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Ujuzi Code Ltd Support",
+      "email": "info@ujuzicode.com",
+      "url": "https://www.ujuzicode.com"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://pck-knowledge-hub-api.vercel.app",
+      "description": "Production Server"
+    },
+    {
+      "url": "http://localhost:3000",
+      "description": "Local Development Server"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "paths": {
+    "/v1/publications": {
+      "get": {
+        "summary": "Retrieve publication records",
+        "description": "Returns a paginated list of publication records matching standard search or incremental synchronization watermarks.",
+        "parameters": [
+          {
+            "name": "updatedSince",
+            "in": "query",
+            "required": false,
+            "description": "An ISO 8601 UTC timestamp. If provided, the response will only include records created, edited, or withdrawn strictly after this time.",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "example": "2026-09-03T08:30:00Z"
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Opaque cursor used to fetch the next page of records in a deterministic synchronization run.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The maximum number of records to return on this page.",
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully retrieved paginated publication records.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicationsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters (e.g. invalid timestamp formats or invalid pagination cursor).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Missing or corrupt Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded.",
+            "headers": {
+              "Retry-After": {
+                "description": "Number of seconds to wait before retrying.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/publications/{id}": {
+      "get": {
+        "summary": "Retrieve a publication by ID",
+        "description": "Returns a single publication record matches the specified source identifier.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The immutable globally unique publication source key.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "pub-2026-001"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully found and returned the publication record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Publication"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The publication with the specified ID was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/taxonomies": {
+      "get": {
+        "summary": "Retrieve controlled taxonomies",
+        "description": "Exposes stable categorization value dictionaries for resourceType, topics, geographies, and languages.",
+        "responses": {
+          "200": {
+            "description": "Taxonomy value mappings successfully retrieved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaxonomiesResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Authenticate via client credential-issued read-only API access tokens."
+      }
+    },
+    "schemas": {
+      "TaxonomyItem": {
+        "type": "object",
+        "required": ["code", "label"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable code representation of taxonomy element."
+          },
+          "label": {
+            "type": "string",
+            "description": "Human-friendly label of the taxonomy element."
+          }
+        }
+      },
+      "Author": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "orcid": {
+            "type": "string",
+            "description": "Standard ORCID identifier for researcher verification."
+          },
+          "identifier": {
+            "type": "string",
+            "description": "Internal or partner system author key."
+          }
+        }
+      },
+      "FileAttachment": {
+        "type": "object",
+        "required": ["url", "mimeType", "sizeBytes", "checksumSha256", "access", "websiteMayCopy"],
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "mimeType": {
+            "type": "string",
+            "example": "application/pdf"
+          },
+          "sizeBytes": {
+            "type": "integer"
+          },
+          "checksumSha256": {
+            "type": "string",
+            "description": "SHA-256 integrity checksum hash."
+          },
+          "access": {
+            "type": "string",
+            "enum": ["public", "restricted"]
+          },
+          "websiteMayCopy": {
+            "type": "boolean",
+            "description": "True if client worker is permitted to permanently download and store the file locally."
+          }
+        }
+      },
+      "PublicationIdentifier": {
+        "type": "object",
+        "required": ["type", "value"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["DOI", "ISBN", "ReportNumber", "Other"]
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      "Publication": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "updatedAt",
+          "status",
+          "resourceType",
+          "publicationDate",
+          "landingPageUrl",
+          "summary",
+          "summaryFormat",
+          "authors",
+          "subjects",
+          "sourceSystem"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Immutable, globally unique key."
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["published", "withdrawn", "deleted"]
+          },
+          "resourceType": {
+            "$ref": "#/components/schemas/TaxonomyItem"
+          },
+          "publicationDate": {
+            "type": "string",
+            "description": "ISO date where known or four-digit year."
+          },
+          "landingPageUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "summary": {
+            "type": "string",
+            "description": "Sanitized summary context."
+          },
+          "summaryFormat": {
+            "type": "string",
+            "enum": ["text", "html"]
+          },
+          "authors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Author"
+            }
+          },
+          "subjects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaxonomyItem"
+            }
+          },
+          "geographies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaxonomyItem"
+            }
+          },
+          "language": {
+            "type": "string",
+            "description": "ISO 639-1 language code representation.",
+            "example": "en"
+          },
+          "identifiers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicationIdentifier"
+            }
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileAttachment"
+            }
+          },
+          "thumbnailUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "rights": {
+            "type": "string",
+            "description": "Rights/licensing declarations."
+          },
+          "sourceSystem": {
+            "type": "string",
+            "description": "Identifies originating upstream records engine."
+          }
+        }
+      },
+      "PublicationsResponse": {
+        "type": "object",
+        "required": ["items", "nextCursor", "syncWatermark"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Publication"
+            }
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true,
+            "description": "Base64 opaque pagination index for successive page requests."
+          },
+          "syncWatermark": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The syncWatermark generated from the latest record updatedAt value. Handled as the updatedSince parameter in the next cycle."
+          }
+        }
+      },
+      "TaxonomiesResponse": {
+        "type": "object",
+        "required": ["resourceTypes", "subjects", "geographies", "languages"],
+        "properties": {
+          "resourceTypes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaxonomyItem"
+            }
+          },
+          "subjects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaxonomyItem"
+            }
+          },
+          "geographies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaxonomyItem"
+            }
+          },
+          "languages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["code", "label"],
+              "properties": {
+                "code": { "type": "string" },
+                "label": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["code", "message", "correlationId"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable error classification code."
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-friendly error descriptions."
+          },
+          "correlationId": {
+            "type": "string",
+            "description": "Unique system lookup key for logging traceability."
+          }
+        }
+      }
+    }
+  }
+}

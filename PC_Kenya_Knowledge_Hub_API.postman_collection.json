@@ -1,0 +1,342 @@
+{
+  "info": {
+    "_postman_id": "7f8b9c0d-e21a-4d2b-98cf-112233445566",
+    "name": "PC-Kenya Knowledge Hub API",
+    "description": "Postman Collection for testing the PC-Kenya Knowledge Hub API Server. Supports local development (`http://localhost:3000`) and Vercel deployments. Pre-configured with automatic bearer token variables, cursor-pagination examples, and validation parameters.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "System & Diagnostics",
+      "description": "Endpoints for checking server health and system configurations.",
+      "item": [
+        {
+          "name": "Server Health Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                ""
+              ]
+            },
+            "description": "Checks the API server's online status, system time, and basic service configuration. Does not require authentication."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Taxonomies",
+      "description": "Retrieve controlled classification values and metadata codes.",
+      "item": [
+        {
+          "name": "Get Controlled Taxonomies",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bearerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/taxonomies",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "taxonomies"
+              ]
+            },
+            "description": "Retrieves the list of resource types, topics/subjects, county/country geographies, and supported languages."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Publications Sync & Query",
+      "description": "Endpoints to list, search, and synchronize publication metadata.",
+      "item": [
+        {
+          "name": "Full Export (Unfiltered Publications)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bearerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/publications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "publications"
+              ]
+            },
+            "description": "Retrieves all publication records in a deterministic order. Acting as a full export used for full recovery or initial imports."
+          },
+          "response": []
+        },
+        {
+          "name": "Incremental Sync (updatedSince Filter)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bearerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/publications?updatedSince=2026-09-03T00:00:00Z",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "publications"
+              ],
+              "query": [
+                {
+                  "key": "updatedSince",
+                  "value": "2026-09-03T00:00:00Z",
+                  "description": "ISO 8601 UTC timestamp to retrieve changes made after this point."
+                }
+              ]
+            },
+            "description": "Delta-sync endpoint that retrieves only the publications created, updated, or tombstoned/withdrawn since the last watermark timestamp."
+          },
+          "response": []
+        },
+        {
+          "name": "Pagination - Page 1 (Limit = 2)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bearerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/publications?limit=2",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "publications"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "2",
+                  "description": "Limit the output chunk size to test pagination boundaries."
+                }
+              ]
+            },
+            "description": "Retrieves the first two publications and provides an opaque `nextCursor` key inside the response body to fetch the next page."
+          },
+          "response": []
+        },
+        {
+          "name": "Pagination - Page 2 (Using Cursor)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bearerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/publications?limit=2&cursor=eyJsYXN0VXBkYXRlZEF0IjoiMjAyNi0wOS0wMlQxMTozMDowMFoiLCJsYXN0SWQiOiJwdWItMjAyNi0wMDIifQ==",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "publications"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "2"
+                },
+                {
+                  "key": "cursor",
+                  "value": "eyJsYXN0VXBkYXRlZEF0IjoiMjAyNi0wOS0wMlQxMTozMDowMFoiLCJsYXN0SWQiOiJwdWItMjAyNi0wMDIifQ==",
+                  "description": "Base64 encoded pagination cursor returned by Page 1."
+                }
+              ]
+            },
+            "description": "Demonstrates deterministic cursor pagination by fetching Page 2 using the Base64 decoded cursor of `pub-2026-002`."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Single Publication by ID",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bearerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/publications/pub-2026-001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "publications",
+                "pub-2026-001"
+              ]
+            },
+            "description": "Retrieve a single fully detailed record by its immutable, globally unique source identifier."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Authentication & Error Tests",
+      "description": "Requests configured to deliberately trigger security/validation errors for robust pipeline testing.",
+      "item": [
+        {
+          "name": "Trigger 401 Unauthorized (No Token)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/publications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "publications"
+              ]
+            },
+            "description": "Verifies that accessing a protected endpoint without an Authorization Bearer header correctly returns 401."
+          },
+          "response": []
+        },
+        {
+          "name": "Trigger 403 Forbidden (Bad Token)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "corrupt_token_abc_123",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/publications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "publications"
+              ]
+            },
+            "description": "Verifies that accessing with a non-matching API token returns 403 Forbidden."
+          },
+          "response": []
+        },
+        {
+          "name": "Trigger 404 Not Found (Missing Publication)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bearerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/publications/pub-non-existent-999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "publications",
+                "pub-non-existent-999"
+              ]
+            },
+            "description": "Verifies that attempting to retrieve a nonexistent publication ID correctly triggers a JSON formatted 404 block with a correlationId."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "bearerToken",
+      "value": "pck_test_token_2026",
+      "type": "string"
+    }
+  ]
+}
