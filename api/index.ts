@@ -1,6 +1,5 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { getTaxonomiesData, getPublicationsData, getPublicationByIdData, isSupabaseConfigured } from './supabase';
 
 const app = express();
@@ -61,7 +60,16 @@ app.use(rateLimiter);
 
 // Supabase JWKS Client Setup
 const JWKS_URL = new URL('https://exyhjkjgyiakccrlmpds.supabase.co/auth/v1/.well-known/jwks.json');
-const JWKS = createRemoteJWKSet(JWKS_URL);
+let jwksCache: any = null;
+
+async function getJWKS() {
+  if (!jwksCache) {
+    const { createRemoteJWKSet } = await import('jose');
+    jwksCache = createRemoteJWKSet(JWKS_URL);
+  }
+  return jwksCache;
+}
+
 const VALID_STATIC_TOKEN = process.env.PCK_API_TOKEN || 'pck_test_token_2026';
 
 // Server-to-Server Authentication Middleware (Supports both static tokens for testing and Supabase ES256 JWKS JWTs)
@@ -84,6 +92,8 @@ const authenticate = async (req: Request, res: Response, next: NextFunction) => 
 
   // 2. Verify Supabase ES256 JWT via JWKS
   try {
+    const { jwtVerify } = await import('jose');
+    const JWKS = await getJWKS();
     const { payload } = await jwtVerify(token, JWKS, {
       algorithms: ['ES256']
     });
