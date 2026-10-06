@@ -1,7 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import { mockPublications, RESOURCE_TYPES, SUBJECTS, GEOGRAPHIES, LANGUAGES } from './data';
-import { Publication, PublicationsResponse, TaxonomiesResponse } from './types';
+import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { getTaxonomiesData, getPublicationsData, getPublicationByIdData, isSupabaseConfigured } from './supabase';
 
 const app = express();
 
@@ -16,7 +16,6 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 });
 
 // Mock Rate Limiting State (Local Memory)
-// Note: In a stateless Vercel Serverless environment, this would ideally use Vercel KV / Redis.
 interface RateLimitRecord {
   count: number;
   resetTime: number;
@@ -60,29 +59,45 @@ const rateLimiter = (req: Request, res: Response, next: NextFunction) => {
 
 app.use(rateLimiter);
 
-// Server-to-Server Authentication Middleware
-const VALID_TOKEN = process.env.PCK_API_TOKEN || 'pck_test_token_2026';
+// Supabase JWKS Client Setup
+const JWKS_URL = new URL('https://exyhjkjgyiakccrlmpds.supabase.co/auth/v1/.well-known/jwks.json');
+const JWKS = createRemoteJWKSet(JWKS_URL);
+const VALID_STATIC_TOKEN = process.env.PCK_API_TOKEN || 'pck_test_token_2026';
 
-const authenticate = (req: Request, res: Response, next: NextFunction) => {
+// Server-to-Server Authentication Middleware (Supports both static tokens for testing and Supabase ES256 JWKS JWTs)
+const authenticate = async (req: Request, res: Response, next: NextFunction) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({
       code: 'UNAUTHORIZED',
-      message: 'Authentication required. Please provide a valid Bearer Token.',
+      message: 'Authentication required. Please provide a valid Bearer Token or Supabase JWT.',
       correlationId: res.getHeader('X-Correlation-ID') as string
     });
   }
 
   const token = authHeader.split(' ')[1];
-  if (token !== VALID_TOKEN) {
+
+  // 1. Allow static fallback token (useful for local development & test suites)
+  if (token === VALID_STATIC_TOKEN) {
+    return next();
+  }
+
+  // 2. Verify Supabase ES256 JWT via JWKS
+  try {
+    const { payload } = await jwtVerify(token, JWKS, {
+      algorithms: ['ES256']
+    });
+    // Attach user payload to request if needed
+    (req as any).user = payload;
+    return next();
+  } catch (err) {
+    // If Supabase is not configured and token didn't match static token, treat as invalid token
     return res.status(403).json({
       code: 'FORBIDDEN',
-      message: 'Invalid or expired API token.',
+      message: 'Invalid or expired Supabase JWT / API token.',
       correlationId: res.getHeader('X-Correlation-ID') as string
     });
   }
-
-  next();
 };
 
 // Root status endpoint (accessible without auth for status/uptime checks)
@@ -91,49 +106,37 @@ app.get('/', (req: Request, res: Response) => {
     status: 'online',
     name: 'PC-Kenya Knowledge Hub API Server',
     version: '1.0.0',
+    supabaseConnected: isSupabaseConfigured(),
     docs: '/v1/openapi.json',
     systemTime: new Date().toISOString()
   });
 });
 
 // GET /v1/taxonomies
-app.get('/v1/taxonomies', authenticate, (req: Request, res: Response) => {
-  const taxonomyResponse: TaxonomiesResponse = {
-    resourceTypes: RESOURCE_TYPES,
-    subjects: SUBJECTS,
-    geographies: GEOGRAPHIES,
-    languages: LANGUAGES
-  };
-  return res.status(200).json(taxonomyResponse);
+app.get('/v1/taxonomies', authenticate, async (req: Request, res: Response) => {
+  try {
+    const taxonomyResponse = await getTaxonomiesData();
+    return res.status(200).json(taxonomyResponse);
+  } catch (err: any) {
+    return res.status(500).json({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: err.message || 'Failed to retrieve taxonomies.',
+      correlationId: res.getHeader('X-Correlation-ID') as string
+    });
+  }
 });
 
 // GET /v1/publications
-app.get('/v1/publications', authenticate, (req: Request, res: Response) => {
+app.get('/v1/publications', authenticate, async (req: Request, res: Response) => {
   const updatedSinceStr = req.query.updatedSince as string | undefined;
   const cursorStr = req.query.cursor as string | undefined;
   const limitQuery = parseInt(req.query.limit as string || '100', 10);
   const limit = Math.min(Math.max(limitQuery, 1), 100); // Enforce max limit of 100
 
-  // 1. Sort the baseline mockPublications deterministically: updatedAt then ID
-  let filtered = [...mockPublications].sort((a, b) => {
-    const dateCompare = a.updatedAt.localeCompare(b.updatedAt);
-    if (dateCompare !== 0) return dateCompare;
-    return a.id.localeCompare(b.id);
-  });
-
-  // 2. Filter by updatedSince timestamp if supplied
+  // Validate updatedSince timestamp if supplied
   if (updatedSinceStr) {
-    try {
-      const updatedSinceDate = new Date(updatedSinceStr).getTime();
-      if (isNaN(updatedSinceDate)) {
-        return res.status(400).json({
-          code: 'INVALID_TIMESTAMP',
-          message: "The 'updatedSince' parameter must be a valid ISO 8601 UTC timestamp.",
-          correlationId: res.getHeader('X-Correlation-ID') as string
-        });
-      }
-      filtered = filtered.filter(pub => new Date(pub.updatedAt).getTime() > updatedSinceDate);
-    } catch {
+    const updatedSinceDate = new Date(updatedSinceStr).getTime();
+    if (isNaN(updatedSinceDate)) {
       return res.status(400).json({
         code: 'INVALID_TIMESTAMP',
         message: "The 'updatedSince' parameter must be a valid ISO 8601 UTC timestamp.",
@@ -142,28 +145,15 @@ app.get('/v1/publications', authenticate, (req: Request, res: Response) => {
     }
   }
 
-  // 3. Filter by cursor if supplied
+  // Validate cursor format if supplied
   if (cursorStr) {
     try {
-      // Decode base64 cursor
       const decodedCursor = Buffer.from(cursorStr, 'base64').toString('utf-8');
-      const cursorPayload = JSON.parse(decodedCursor) as { lastUpdatedAt: string; lastId: string };
-
+      const cursorPayload = JSON.parse(decodedCursor);
       if (!cursorPayload.lastUpdatedAt || !cursorPayload.lastId) {
-        throw new Error('Invalid cursor fields');
+        throw new Error('Invalid cursor structure');
       }
-
-      // Filter publications strictly after the cursor:
-      // (updatedAt > lastUpdatedAt) OR (updatedAt === lastUpdatedAt AND id > lastId)
-      filtered = filtered.filter(pub => {
-        const timeCompare = pub.updatedAt.localeCompare(cursorPayload.lastUpdatedAt);
-        if (timeCompare > 0) return true;
-        if (timeCompare === 0) {
-          return pub.id.localeCompare(cursorPayload.lastId) > 0;
-        }
-        return false;
-      });
-    } catch (err) {
+    } catch {
       return res.status(400).json({
         code: 'INVALID_CURSOR',
         message: "The pagination 'cursor' is invalid or has been corrupted.",
@@ -172,54 +162,46 @@ app.get('/v1/publications', authenticate, (req: Request, res: Response) => {
     }
   }
 
-  // 4. Slice to the requested page size (limit)
-  const hasMore = filtered.length > limit;
-  const pageItems = filtered.slice(0, limit);
-
-  // 5. Generate opaque nextCursor if more items are available
-  let nextCursor: string | null = null;
-  if (hasMore && pageItems.length > 0) {
-    const lastItem = pageItems[pageItems.length - 1];
-    const cursorPayload = {
-      lastUpdatedAt: lastItem.updatedAt,
-      lastId: lastItem.id
-    };
-    nextCursor = Buffer.from(JSON.stringify(cursorPayload)).toString('base64');
-  }
-
-  // 6. Calculate source-generated syncWatermark
-  // The syncWatermark represents the updatedAt of the last processed item in this page.
-  // If the page is empty, we return the client's current updatedSince or the system epoch.
-  const syncWatermark = pageItems.length > 0 
-    ? pageItems[pageItems.length - 1].updatedAt 
-    : (updatedSinceStr || new Date(0).toISOString());
-
-  const response: PublicationsResponse = {
-    items: pageItems,
-    nextCursor,
-    syncWatermark
-  };
-
-  return res.status(200).json(response);
-});
-
-// GET /v1/publications/{id}
-app.get('/v1/publications/:id', authenticate, (req: Request, res: Response) => {
-  const { id } = req.params;
-  const pub = mockPublications.find(p => p.id === id);
-  if (!pub) {
-    return res.status(404).json({
-      code: 'NOT_FOUND',
-      message: `Publication with ID '${id}' was not found.`,
+  try {
+    const { items, nextCursor, syncWatermark } = await getPublicationsData(updatedSinceStr, cursorStr, limit);
+    return res.status(200).json({
+      items,
+      nextCursor,
+      syncWatermark
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: err.message || 'Failed to retrieve publications.',
       correlationId: res.getHeader('X-Correlation-ID') as string
     });
   }
-  return res.status(200).json(pub);
+});
+
+// GET /v1/publications/{id}
+app.get('/v1/publications/:id', authenticate, async (req: Request, res: Response) => {
+  const { id } = req.params;
+  try {
+    const pub = await getPublicationByIdData(id);
+    if (!pub) {
+      return res.status(404).json({
+        code: 'NOT_FOUND',
+        message: `Publication with ID '${id}' was not found.`,
+        correlationId: res.getHeader('X-Correlation-ID') as string
+      });
+    }
+    return res.status(200).json(pub);
+  } catch (err: any) {
+    return res.status(500).json({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: err.message || 'Failed to retrieve publication.',
+      correlationId: res.getHeader('X-Correlation-ID') as string
+    });
+  }
 });
 
 // Serve OpenAPI Spec
 app.get('/v1/openapi.json', (req: Request, res: Response) => {
-  // Simple JSON-formatted OpenAPI spec aligned with PRD
   res.sendFile(__dirname + '/openapi.json');
 });
 

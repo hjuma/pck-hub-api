@@ -9,8 +9,11 @@
     "start": "node dist/api/index.js"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.117.2",
     "cors": "^2.8.5",
-    "express": "^4.19.2"
+    "dotenv": "^18.0.4",
+    "express": "^4.19.2",
+    "jose": "^6.2.12"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
