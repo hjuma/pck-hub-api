@@ -140,6 +140,54 @@ export async function getTaxonomiesData(): Promise<TaxonomiesResponse> {
   }
 }
 
+function getMockPublicationsFiltered(
+  updatedSinceStr?: string,
+  cursorStr?: string,
+  limit: number = 100
+): { items: Publication[]; nextCursor: string | null; syncWatermark: string } {
+  let filtered = [...mockPublications].sort((a, b) => {
+    const dateCompare = a.updatedAt.localeCompare(b.updatedAt);
+    if (dateCompare !== 0) return dateCompare;
+    return a.id.localeCompare(b.id);
+  });
+
+  if (updatedSinceStr) {
+    const updatedSinceDate = new Date(updatedSinceStr).getTime();
+    filtered = filtered.filter(pub => new Date(pub.updatedAt).getTime() > updatedSinceDate);
+  }
+
+  if (cursorStr) {
+    const decodedCursor = Buffer.from(cursorStr, 'base64').toString('utf-8');
+    const cursorPayload = JSON.parse(decodedCursor) as { lastUpdatedAt: string; lastId: string };
+    filtered = filtered.filter(pub => {
+      const timeCompare = pub.updatedAt.localeCompare(cursorPayload.lastUpdatedAt);
+      if (timeCompare > 0) return true;
+      if (timeCompare === 0) {
+        return pub.id.localeCompare(cursorPayload.lastId) > 0;
+      }
+      return false;
+    });
+  }
+
+  const hasMore = filtered.length > limit;
+  const pageItems = filtered.slice(0, limit);
+
+  let nextCursor: string | null = null;
+  if (hasMore && pageItems.length > 0) {
+    const lastItem = pageItems[pageItems.length - 1];
+    nextCursor = Buffer.from(JSON.stringify({
+      lastUpdatedAt: lastItem.updatedAt,
+      lastId: lastItem.id
+    })).toString('base64');
+  }
+
+  const syncWatermark = pageItems.length > 0 
+    ? pageItems[pageItems.length - 1].updatedAt 
+    : (updatedSinceStr || new Date(0).toISOString());
+
+  return { items: pageItems, nextCursor, syncWatermark };
+}
+
 /**
  * Fetch publications with deterministic sorting, updatedSince filtering, and cursor pagination
  */
@@ -150,47 +198,7 @@ export async function getPublicationsData(
 ): Promise<{ items: Publication[]; nextCursor: string | null; syncWatermark: string }> {
   // If Supabase is not configured, fallback to mockPublications logic
   if (!isSupabaseConfigured()) {
-    let filtered = [...mockPublications].sort((a, b) => {
-      const dateCompare = a.updatedAt.localeCompare(b.updatedAt);
-      if (dateCompare !== 0) return dateCompare;
-      return a.id.localeCompare(b.id);
-    });
-
-    if (updatedSinceStr) {
-      const updatedSinceDate = new Date(updatedSinceStr).getTime();
-      filtered = filtered.filter(pub => new Date(pub.updatedAt).getTime() > updatedSinceDate);
-    }
-
-    if (cursorStr) {
-      const decodedCursor = Buffer.from(cursorStr, 'base64').toString('utf-8');
-      const cursorPayload = JSON.parse(decodedCursor) as { lastUpdatedAt: string; lastId: string };
-      filtered = filtered.filter(pub => {
-        const timeCompare = pub.updatedAt.localeCompare(cursorPayload.lastUpdatedAt);
-        if (timeCompare > 0) return true;
-        if (timeCompare === 0) {
-          return pub.id.localeCompare(cursorPayload.lastId) > 0;
-        }
-        return false;
-      });
-    }
-
-    const hasMore = filtered.length > limit;
-    const pageItems = filtered.slice(0, limit);
-
-    let nextCursor: string | null = null;
-    if (hasMore && pageItems.length > 0) {
-      const lastItem = pageItems[pageItems.length - 1];
-      nextCursor = Buffer.from(JSON.stringify({
-        lastUpdatedAt: lastItem.updatedAt,
-        lastId: lastItem.id
-      })).toString('base64');
-    }
-
-    const syncWatermark = pageItems.length > 0 
-      ? pageItems[pageItems.length - 1].updatedAt 
-      : (updatedSinceStr || new Date(0).toISOString());
-
-    return { items: pageItems, nextCursor, syncWatermark };
+    return getMockPublicationsFiltered(updatedSinceStr, cursorStr, limit);
   }
 
   // Live Supabase query
@@ -226,6 +234,11 @@ export async function getPublicationsData(
     }
 
     const rows = data || [];
+    if (rows.length === 0) {
+      console.warn('Supabase returned 0 publications, falling back to mockPublications');
+      return getMockPublicationsFiltered(updatedSinceStr, cursorStr, limit);
+    }
+
     const hasMore = rows.length > limit;
     const pageRows = hasMore ? rows.slice(0, limit) : rows;
     const items = pageRows.map(mapSupabaseRowToPublication);
@@ -245,8 +258,8 @@ export async function getPublicationsData(
 
     return { items, nextCursor, syncWatermark };
   } catch (err) {
-    console.error('Error fetching publications from Supabase:', err);
-    throw err;
+    console.warn('Error fetching publications from Supabase, falling back to mockPublications:', err);
+    return getMockPublicationsFiltered(updatedSinceStr, cursorStr, limit);
   }
 }
 
@@ -274,12 +287,12 @@ export async function getPublicationByIdData(id: string): Promise<Publication | 
       .single();
 
     if (error || !data) {
-      return null;
+      return mockPublications.find(p => p.id === id) || null;
     }
 
     return mapSupabaseRowToPublication(data);
   } catch (err) {
-    console.error(`Error fetching publication ${id} from Supabase:`, err);
-    return null;
+    console.warn(`Error fetching publication ${id} from Supabase, falling back to mock:`, err);
+    return mockPublications.find(p => p.id === id) || null;
   }
 }
