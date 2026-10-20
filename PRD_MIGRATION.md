@@ -92,8 +92,8 @@ Stores the core publication records.
 Stores publication authors (1-to-many relationship).
 * `id` (SERIAL, Primary Key)
 * `publication_id` (VARCHAR(64) REFERENCES publications(id) ON DELETE CASCADE)
-* `name` (TEXT NOT NULL)
-* `orcid` (VARCHAR(64))
+* `author_name` (TEXT NOT NULL)
+* `author_orcid` (VARCHAR(64))
 * `identifier` (VARCHAR(64))
 
 ### 4.4. Table: `publication_subjects`

@@ -49,8 +49,8 @@ CREATE INDEX idx_publications_updated_at_id ON publications (updated_at ASC, id 
 CREATE TABLE publication_authors (
     id SERIAL PRIMARY KEY,
     publication_id VARCHAR(64) REFERENCES publications(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    orcid VARCHAR(64),
+    author_name TEXT NOT NULL,
+    author_orcid VARCHAR(64),
     identifier VARCHAR(64)
 );
 
@@ -139,7 +139,7 @@ VALUES (
     'pc-kenya-hub-v1'
 );
 
-INSERT INTO publication_authors (publication_id, name, orcid) VALUES
+INSERT INTO publication_authors (publication_id, author_name, author_orcid) VALUES
 ('pub-2026-001', 'Dr. Jane Atieno', '0000-0002-1825-0097');
 
 INSERT INTO publication_subjects (publication_id, taxonomy_code) VALUES
@@ -172,7 +172,7 @@ VALUES (
     'pc-kenya-hub-v1'
 );
 
-INSERT INTO publication_authors (publication_id, name) VALUES
+INSERT INTO publication_authors (publication_id, author_name) VALUES
 ('pub-2026-002', 'Population Council Kenya Secretariat');
 
 INSERT INTO publication_subjects (publication_id, taxonomy_code) VALUES
@@ -196,7 +196,7 @@ VALUES (
     'pc-kenya-hub-v1'
 );
 
-INSERT INTO publication_authors (publication_id, name, orcid) VALUES
+INSERT INTO publication_authors (publication_id, author_name, author_orcid) VALUES
 ('pub-2026-003', 'Prof. Samuel Ochieng', '0000-0001-9982-1102'),
 ('pub-2026-003', 'Amina Mohammed', '0000-0003-4412-8891');
 
@@ -230,7 +230,7 @@ VALUES (
     'pc-kenya-hub-v1'
 );
 
-INSERT INTO publication_authors (publication_id, name) VALUES
+INSERT INTO publication_authors (publication_id, author_name) VALUES
 ('pub-2026-004', 'Dr. Beatrice Wanjiku');
 
 INSERT INTO publication_subjects (publication_id, taxonomy_code) VALUES
@@ -255,7 +255,7 @@ VALUES (
     'pc-kenya-hub-v1'
 );
 
-INSERT INTO publication_authors (publication_id, name) VALUES
+INSERT INTO publication_authors (publication_id, author_name) VALUES
 ('pub-2026-005', 'Dr. David Kimani'),
 ('pub-2026-005', 'Grace A Notice');
 

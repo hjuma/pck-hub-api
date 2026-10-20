@@ -54,8 +54,8 @@ function mapSupabaseRowToPublication(row: any): Publication {
     summary: row.summary,
     summaryFormat: row.summary_format,
     authors: (row.publication_authors || []).map((a: any) => ({
-      name: a.name,
-      orcid: a.orcid || undefined,
+      name: a.author_name,
+      orcid: a.author_orcid || undefined,
       identifier: a.identifier || undefined
     })),
     subjects: (row.publication_subjects || []).map((s: any) => ({
