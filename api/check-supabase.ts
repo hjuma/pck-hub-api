@@ -19,7 +19,7 @@ async function checkSupabaseConnection() {
     console.log(`Success! Found ${taxonomies?.length || 0} taxonomies.`);
 
     console.log('\nQuerying publications table from Supabase...');
-    const { data: publications, error: pubError } = await supabase.from('publications').select('id, title, status, updated_at').limit(5);
+    const { data: publications, error: pubError } = await supabase.from('publications').select('publication_id, title, status, updated_at').limit(5);
     if (pubError) throw pubError;
     console.log(`Success! Found ${publications?.length || 0} publications:`);
     console.table(publications);

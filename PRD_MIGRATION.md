@@ -117,7 +117,7 @@ Stores external identifiers (DOI, ISBN, etc.).
 
 ### 4.7. Table: `publication_files`
 Stores file attachments linked to publications.
-* `id` (SERIAL, Primary Key)
+* `file_id` (SERIAL, Primary Key constraint: `publication_file_pk`)
 * `publication_id` (VARCHAR(64) REFERENCES publications(id) ON DELETE CASCADE)
 * `url` (TEXT NOT NULL)
 * `mime_type` (VARCHAR(128) NOT NULL)

@@ -44,7 +44,7 @@ function normalizeTimestamp(ts: string): string {
  */
 function mapSupabaseRowToPublication(row: any): Publication {
   return {
-    id: row.id,
+    id: row.publication_id || row.id,
     title: row.title,
     updatedAt: normalizeTimestamp(row.updated_at),
     status: row.status,
@@ -77,12 +77,12 @@ function mapSupabaseRowToPublication(row: any): Publication {
       : undefined,
     files: (row.publication_files || []).length > 0
       ? row.publication_files.map((f: any) => ({
-          url: f.url,
-          mimeType: f.mime_type,
-          sizeBytes: Number(f.size_bytes),
-          checksumSha256: f.checksum_sha256,
-          access: f.access,
-          websiteMayCopy: f.website_may_copy
+          url: f.url || (f.filename ? `https://knowledge.example.org/files/${f.filename}` : ''),
+          mimeType: f.mime_type || f.content_type || 'application/octet-stream',
+          sizeBytes: Number(f.size_bytes || f.file_size || 0),
+          checksumSha256: f.checksum_value || f.md5_hash || f.checksum_sha256 || '',
+          access: f.access || (f.is_restricted ? 'restricted' : 'public'),
+          websiteMayCopy: f.is_restricted !== undefined ? !f.is_restricted : (f.website_may_copy !== undefined ? f.website_may_copy : true)
         }))
       : undefined,
     thumbnailUrl: row.thumbnail_url || undefined,
@@ -207,7 +207,7 @@ export async function getPublicationsData(
         publication_files(*)
       `)
       .order('updated_at', { ascending: true })
-      .order('id', { ascending: true })
+      .order('publication_id', { ascending: true })
       .limit(limit + 1); // fetch limit + 1 to detect if there is a next page
 
     if (updatedSinceStr) {
@@ -217,7 +217,7 @@ export async function getPublicationsData(
     if (cursorStr) {
       const decodedCursor = Buffer.from(cursorStr, 'base64').toString('utf-8');
       const cursorPayload = JSON.parse(decodedCursor) as { lastUpdatedAt: string; lastId: string };
-      query = query.or(`updated_at.gt.${cursorPayload.lastUpdatedAt},and(updated_at.eq.${cursorPayload.lastUpdatedAt},id.gt.${cursorPayload.lastId})`);
+      query = query.or(`updated_at.gt.${cursorPayload.lastUpdatedAt},and(updated_at.eq.${cursorPayload.lastUpdatedAt},publication_id.gt.${cursorPayload.lastId})`);
     }
 
     const { data, error } = await query;
@@ -235,7 +235,7 @@ export async function getPublicationsData(
       const lastRow = pageRows[pageRows.length - 1];
       nextCursor = Buffer.from(JSON.stringify({
         lastUpdatedAt: normalizeTimestamp(lastRow.updated_at),
-        lastId: lastRow.id
+        lastId: lastRow.publication_id || lastRow.id
       })).toString('base64');
     }
 
@@ -270,7 +270,7 @@ export async function getPublicationByIdData(id: string): Promise<Publication | 
         publication_identifiers(*),
         publication_files(*)
       `)
-      .eq('id', id)
+      .eq('publication_id', id)
       .single();
 
     if (error || !data) {
