@@ -1,0 +1,108 @@
+{
+  "info": {
+    "name": "PC-Kenya Gated Downloads API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Submit Download Request (Public)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"publicationId\": \"pub-2026-001\",\n  \"name\": \"Jane Doe\",\n  \"email\": \"jane.doe@example.com\",\n  \"profileType\": \"standard\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/downloads/request",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "v1",
+            "downloads",
+            "request"
+          ]
+        }
+      }
+    },
+    {
+      "name": "List Pending Requests (Admin)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{auth_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/v1/downloads/requests",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "v1",
+            "downloads",
+            "requests"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Approve Request (Admin)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{auth_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/v1/downloads/requests/mock-sub-001/approve",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "v1",
+            "downloads",
+            "requests",
+            "mock-sub-001",
+            "approve"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Reject Request (Admin)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{auth_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/v1/downloads/requests/mock-sub-001/reject",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "v1",
+            "downloads",
+            "requests",
+            "mock-sub-001",
+            "reject"
+          ]
+        }
+      }
+    }
+  ]
+}

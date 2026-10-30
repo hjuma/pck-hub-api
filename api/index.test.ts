@@ -141,4 +141,80 @@ test('PC-Kenya Knowledge Hub API Server Test Suite', async (t) => {
     assert.strictEqual(body.code, 'NOT_FOUND');
     assert.ok(body.correlationId);
   });
+
+  await t.test('POST /v1/downloads/request should validate required fields and email format', async () => {
+    // Missing fields
+    const res1 = await fetch(`${url}/v1/downloads/request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ publicationId: 'pub-2026-001', name: 'Test User' })
+    });
+    assert.strictEqual(res1.status, 400);
+    const body1 = await res1.json() as any;
+    assert.strictEqual(body1.code, 'VALIDATION_ERROR');
+
+    // Invalid email
+    const res2 = await fetch(`${url}/v1/downloads/request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ publicationId: 'pub-2026-001', name: 'Test User', email: 'not-an-email' })
+    });
+    assert.strictEqual(res2.status, 400);
+    const body2 = await res2.json() as any;
+    assert.strictEqual(body2.code, 'INVALID_EMAIL');
+  });
+
+  await t.test('POST /v1/downloads/request should successfully process valid download request', async () => {
+    const res = await fetch(`${url}/v1/downloads/request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        publicationId: 'pub-2026-001',
+        name: 'Jane Doe',
+        email: 'jane.doe@example.com',
+        profileType: 'standard'
+      })
+    });
+    assert.strictEqual(res.status, 201);
+    const body = await res.json() as any;
+    assert.strictEqual(body.success, true);
+    assert.ok(body.status);
+    assert.ok(Array.isArray(body.downloadUrls));
+  });
+
+  await t.test('GET /v1/downloads/requests should require authentication', async () => {
+    const res = await fetch(`${url}/v1/downloads/requests`);
+    assert.strictEqual(res.status, 401);
+  });
+
+  await t.test('GET /v1/downloads/requests should return pending requests with valid token', async () => {
+    const res = await fetch(`${url}/v1/downloads/requests`, { headers: AUTH_HEADER });
+    assert.strictEqual(res.status, 200);
+    const body = await res.json() as any;
+    assert.ok(Array.isArray(body.items));
+  });
+
+  await t.test('POST /v1/downloads/requests/:id/approve should approve request and generate signed URLs for all publication files', async () => {
+    const res = await fetch(`${url}/v1/downloads/requests/mock-sub-001/approve`, {
+      method: 'POST',
+      headers: AUTH_HEADER
+    });
+    assert.strictEqual(res.status, 200);
+    const body = await res.json() as any;
+    assert.strictEqual(body.success, true);
+    assert.strictEqual(body.status, 'approved');
+    assert.ok(Array.isArray(body.downloadUrls));
+    assert.ok(body.downloadUrls.length > 0);
+  });
+
+  await t.test('POST /v1/downloads/requests/:id/reject should reject request', async () => {
+    const res = await fetch(`${url}/v1/downloads/requests/mock-sub-001/reject`, {
+      method: 'POST',
+      headers: AUTH_HEADER
+    });
+    assert.strictEqual(res.status, 200);
+    const body = await res.json() as any;
+    assert.strictEqual(body.success, true);
+    assert.strictEqual(body.status, 'rejected');
+  });
 });

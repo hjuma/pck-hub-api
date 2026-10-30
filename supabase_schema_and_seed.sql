@@ -170,3 +170,59 @@ INSERT INTO publication_identifiers (publication_id, type, value) VALUES
 
 INSERT INTO publication_files (publication_file_pk, publication_id, url, mime_type, size_bytes, checksum_value, is_restricted) VALUES
 ('file-pk-001', 'pub-2026-001', 'https://knowledge.example.org/files/adolescent-health-baseline-2026.pdf', 'application/pdf', 2457600, 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2', false);
+
+-- ============================================================================
+-- 5. GATED DOWNLOADS & LEAD CAPTURE SCHEMA (Epic 1)
+-- ============================================================================
+
+-- Lead Submissions Table
+CREATE TABLE IF NOT EXISTS public.lead_submissions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    publication_id VARCHAR(255) REFERENCES public.publications(publication_id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    profile_type VARCHAR(64) DEFAULT 'standard',
+    status VARCHAR(32) NOT NULL DEFAULT 'pending', -- 'pending', 'approved', 'rejected'
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_lead_submissions_status ON public.lead_submissions(status);
+CREATE INDEX IF NOT EXISTS idx_lead_submissions_email ON public.lead_submissions(email);
+CREATE INDEX IF NOT EXISTS idx_lead_submissions_pub_id ON public.lead_submissions(publication_id);
+
+-- Audit Logs Table
+CREATE TABLE IF NOT EXISTS public.audit_logs (
+    id SERIAL PRIMARY KEY,
+    event_type VARCHAR(64) NOT NULL, -- 'download_request', 'signed_url_generated', 'file_downloaded', 'request_approved', 'request_rejected'
+    lead_id UUID REFERENCES public.lead_submissions(id) ON DELETE SET NULL,
+    publication_id VARCHAR(255),
+    ip_address VARCHAR(64),
+    user_agent TEXT,
+    details JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_event_type ON public.audit_logs(event_type);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON public.audit_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_pub_id ON public.audit_logs(publication_id);
+
+-- Supabase Storage Private Bucket Setup (`protected-downloads`)
+INSERT INTO storage.buckets (id, name, public) 
+VALUES ('protected-downloads', 'protected-downloads', false) 
+ON CONFLICT (id) DO UPDATE SET public = false;
+
+-- Enable Row Level Security (RLS)
+ALTER TABLE public.lead_submissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies (Deny anonymous direct read/write, allow service role full access)
+DROP POLICY IF EXISTS "Allow service role full access on lead_submissions" ON public.lead_submissions;
+CREATE POLICY "Allow service role full access on lead_submissions" ON public.lead_submissions
+    FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+
+DROP POLICY IF EXISTS "Allow service role full access on audit_logs" ON public.audit_logs;
+CREATE POLICY "Allow service role full access on audit_logs" ON public.audit_logs
+    FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+

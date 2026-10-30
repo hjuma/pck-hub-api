@@ -1,6 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import { getTaxonomiesData, getPublicationsData, getPublicationByIdData, isSupabaseConfigured } from './supabase';
+import { getTaxonomiesData, getPublicationsData, getPublicationByIdData, isSupabaseConfigured, processDownloadRequest, getPendingDownloadRequests, approveDownloadRequest, rejectDownloadRequest } from './supabase';
 
 const app = express();
 
@@ -205,6 +205,89 @@ app.get('/v1/publications/:id', authenticate, async (req: Request, res: Response
     return res.status(500).json({
       code: 'INTERNAL_SERVER_ERROR',
       message: err.message || 'Failed to retrieve publication.',
+      correlationId: res.getHeader('X-Correlation-ID') as string
+    });
+  }
+});
+
+// ============================================================================
+// GATED DOWNLOADS & LEAD CAPTURE ENDPOINTS (Epics 3, 4, 5)
+// ============================================================================
+
+// POST /v1/downloads/request (Public lead submission & download request)
+app.post('/v1/downloads/request', async (req: Request, res: Response) => {
+  try {
+    const { publicationId, name, email, profileType, metadata } = req.body;
+    if (!publicationId || !name || !email) {
+      return res.status(400).json({
+        code: 'VALIDATION_ERROR',
+        message: 'Missing required fields: publicationId, name, and email are required.',
+        correlationId: res.getHeader('X-Correlation-ID') as string
+      });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({
+        code: 'INVALID_EMAIL',
+        message: 'Provided email address is invalid.',
+        correlationId: res.getHeader('X-Correlation-ID') as string
+      });
+    }
+
+    const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
+    const userAgent = req.headers['user-agent'] || 'unknown';
+
+    const result = await processDownloadRequest({ publicationId, name, email, profileType, metadata }, clientIp, userAgent);
+    return res.status(201).json(result);
+  } catch (err: any) {
+    return res.status(500).json({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: err.message || 'Failed to process download request.',
+      correlationId: res.getHeader('X-Correlation-ID') as string
+    });
+  }
+});
+
+// GET /v1/downloads/requests (Admin: List pending submissions - authenticated)
+app.get('/v1/downloads/requests', authenticate, async (req: Request, res: Response) => {
+  try {
+    const requests = await getPendingDownloadRequests();
+    return res.status(200).json({ items: requests });
+  } catch (err: any) {
+    return res.status(500).json({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: err.message || 'Failed to retrieve pending download requests.',
+      correlationId: res.getHeader('X-Correlation-ID') as string
+    });
+  }
+});
+
+// POST /v1/downloads/requests/:id/approve (Admin: Approve submission - authenticated)
+app.post('/v1/downloads/requests/:id/approve', authenticate, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const result = await approveDownloadRequest(id);
+    return res.status(200).json(result);
+  } catch (err: any) {
+    return res.status(500).json({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: err.message || 'Failed to approve download request.',
+      correlationId: res.getHeader('X-Correlation-ID') as string
+    });
+  }
+});
+
+// POST /v1/downloads/requests/:id/reject (Admin: Reject submission - authenticated)
+app.post('/v1/downloads/requests/:id/reject', authenticate, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const result = await rejectDownloadRequest(id);
+    return res.status(200).json(result);
+  } catch (err: any) {
+    return res.status(500).json({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: err.message || 'Failed to reject download request.',
       correlationId: res.getHeader('X-Correlation-ID') as string
     });
   }
