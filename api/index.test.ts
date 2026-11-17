@@ -164,7 +164,7 @@ test('PC-Kenya Knowledge Hub API Server Test Suite', async (t) => {
     assert.strictEqual(body2.code, 'INVALID_EMAIL');
   });
 
-  await t.test('POST /v1/downloads/request should successfully process valid download request', async () => {
+  await t.test('POST /v1/downloads/request should successfully process valid download request and include publication_id prefix in signed URLs', async () => {
     const res = await fetch(`${url}/v1/downloads/request`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -180,6 +180,11 @@ test('PC-Kenya Knowledge Hub API Server Test Suite', async (t) => {
     assert.strictEqual(body.success, true);
     assert.ok(body.status);
     assert.ok(Array.isArray(body.downloadUrls));
+    assert.ok(body.downloadUrls.length > 0);
+    assert.ok(
+      body.downloadUrls[0].signedUrl.includes('/pub-2026-001/'),
+      `Expected signedUrl to include /pub-2026-001/ but got: ${body.downloadUrls[0].signedUrl}`
+    );
   });
 
   await t.test('GET /v1/downloads/requests should require authentication', async () => {
@@ -194,7 +199,7 @@ test('PC-Kenya Knowledge Hub API Server Test Suite', async (t) => {
     assert.ok(Array.isArray(body.items));
   });
 
-  await t.test('POST /v1/downloads/requests/:id/approve should approve request and generate signed URLs for all publication files', async () => {
+  await t.test('POST /v1/downloads/requests/:id/approve should approve request and generate signed URLs with publication_id prefix for all publication files', async () => {
     const res = await fetch(`${url}/v1/downloads/requests/mock-sub-001/approve`, {
       method: 'POST',
       headers: AUTH_HEADER
@@ -205,6 +210,10 @@ test('PC-Kenya Knowledge Hub API Server Test Suite', async (t) => {
     assert.strictEqual(body.status, 'approved');
     assert.ok(Array.isArray(body.downloadUrls));
     assert.ok(body.downloadUrls.length > 0);
+    assert.ok(
+      body.downloadUrls[0].signedUrl.includes('/pub-2026-001/'),
+      `Expected signedUrl to include /pub-2026-001/ but got: ${body.downloadUrls[0].signedUrl}`
+    );
   });
 
   await t.test('POST /v1/downloads/requests/:id/reject should reject request', async () => {

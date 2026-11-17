@@ -329,12 +329,24 @@ export async function generateSignedUrlsForPublication(
 
     if (filesErr || !files || files.length === 0) {
       // Fallback if no specific files table entries found, generate for the publication ID
+      const fallbackFilename = `${publicationId}.pdf`;
+      const fallbackStoragePath = `${publicationId}/${fallbackFilename}`;
+      let fallbackSignedUrl = `https://knowledge.example.org/protected-downloads/${publicationId}/${fallbackFilename}?token=fallback_sig&expires=${expiresIn}`;
+      try {
+        const { data, error } = await supabase.storage
+          .from('protected-downloads')
+          .createSignedUrl(fallbackStoragePath, expiresIn);
+        if (!error && data?.signedUrl) {
+          fallbackSignedUrl = data.signedUrl;
+        }
+      } catch {}
+
       return {
         downloadUrls: [
           {
             fileId: `file-${publicationId}-default`,
-            filename: `${publicationId}.pdf`,
-            signedUrl: `https://knowledge.example.org/protected-downloads/${publicationId}.pdf?token=fallback_sig&expires=${expiresIn}`,
+            filename: fallbackFilename,
+            signedUrl: fallbackSignedUrl,
             expiresIn,
             expiresAt,
             mimeType: 'application/pdf'
@@ -347,8 +359,16 @@ export async function generateSignedUrlsForPublication(
 
     const downloadUrls = [];
     for (const f of files) {
-      const storagePath = f.filename || f.url?.split('/').pop() || `${f.publication_file_pk}.pdf`;
-      let signedUrl = f.url || '';
+      const rawFilename = f.filename || f.url?.split('/').pop() || `${f.publication_file_pk}.pdf`;
+      const cleanFilename = rawFilename.replace(/^\/+/, '');
+      const storagePath = cleanFilename.startsWith(`${publicationId}/`)
+        ? cleanFilename
+        : `${publicationId}/${cleanFilename}`;
+
+      let signedUrl = (f.url && (f.url.startsWith('http://') || f.url.startsWith('https://')))
+        ? f.url
+        : `https://knowledge.example.org/protected-downloads/${storagePath}?token=fallback_sig&expires=${expiresIn}`;
+
       try {
         const { data, error } = await supabase.storage
           .from('protected-downloads')
@@ -362,7 +382,7 @@ export async function generateSignedUrlsForPublication(
 
       downloadUrls.push({
         fileId: f.publication_file_pk || f.file_id || storagePath,
-        filename: f.filename || storagePath,
+        filename: f.filename || cleanFilename.split('/').pop() || cleanFilename,
         signedUrl,
         expiresIn,
         expiresAt,
@@ -382,7 +402,7 @@ export async function generateSignedUrlsForPublication(
         {
           fileId: `file-${publicationId}-fallback`,
           filename: `${publicationId}.pdf`,
-          signedUrl: `https://knowledge.example.org/protected-downloads/${publicationId}?token=error_fallback&expires=${expiresIn}`,
+          signedUrl: `https://knowledge.example.org/protected-downloads/${publicationId}/${publicationId}.pdf?token=error_fallback&expires=${expiresIn}`,
           expiresIn,
           expiresAt,
           mimeType: 'application/pdf'
