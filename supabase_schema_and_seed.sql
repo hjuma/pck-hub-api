@@ -184,6 +184,9 @@ CREATE TABLE IF NOT EXISTS public.lead_submissions (
     metadata JSONB DEFAULT '{}'::jsonb,
     profile_type VARCHAR(64) DEFAULT 'standard',
     status VARCHAR(32) NOT NULL DEFAULT 'pending', -- 'pending', 'approved', 'rejected'
+    accepted BOOLEAN NOT NULL DEFAULT false,
+    accepted_at TIMESTAMPTZ NULL,
+    download_request JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -191,6 +194,45 @@ CREATE TABLE IF NOT EXISTS public.lead_submissions (
 CREATE INDEX IF NOT EXISTS idx_lead_submissions_status ON public.lead_submissions(status);
 CREATE INDEX IF NOT EXISTS idx_lead_submissions_email ON public.lead_submissions(email);
 CREATE INDEX IF NOT EXISTS idx_lead_submissions_pub_id ON public.lead_submissions(publication_id);
+CREATE INDEX IF NOT EXISTS idx_lead_submissions_accepted ON public.lead_submissions(accepted);
+CREATE INDEX IF NOT EXISTS idx_lead_submissions_download_request ON public.lead_submissions USING gin(download_request);
+
+-- Lead Submission Questions Table (Normalized Question/Survey Responses)
+CREATE TABLE IF NOT EXISTS public.lead_submission_questions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    submission_id UUID NOT NULL REFERENCES public.lead_submissions(id) ON DELETE CASCADE,
+    question_id VARCHAR(128) NOT NULL,
+    question_type VARCHAR(64) NOT NULL,
+    allow_multiple BOOLEAN NOT NULL DEFAULT false,
+    options JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_lsq_submission_id ON public.lead_submission_questions(submission_id);
+CREATE INDEX IF NOT EXISTS idx_lsq_question_id ON public.lead_submission_questions(question_id);
+CREATE INDEX IF NOT EXISTS idx_lsq_options ON public.lead_submission_questions USING gin(options);
+
+-- Convenient Reporting View for Analytics / Dashboards
+CREATE OR REPLACE VIEW public.v_lead_submission_responses AS
+SELECT 
+    ls.id AS submission_id,
+    ls.publication_id,
+    ls.name,
+    ls.email,
+    ls.profile_type,
+    ls.status,
+    ls.accepted,
+    ls.accepted_at,
+    lsq.id AS question_entry_id,
+    lsq.question_id,
+    lsq.question_type,
+    lsq.allow_multiple,
+    opt->>'id' AS option_id,
+    opt->>'label' AS option_label,
+    ls.created_at
+FROM public.lead_submissions ls
+LEFT JOIN public.lead_submission_questions lsq ON ls.id = lsq.submission_id
+LEFT JOIN LATERAL jsonb_array_elements(lsq.options) AS opt ON true;
 
 -- Audit Logs Table
 CREATE TABLE IF NOT EXISTS public.audit_logs (
@@ -215,11 +257,16 @@ ON CONFLICT (id) DO UPDATE SET public = false;
 
 -- Enable Row Level Security (RLS)
 ALTER TABLE public.lead_submissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.lead_submission_questions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies (Deny anonymous direct read/write, allow service role full access)
 DROP POLICY IF EXISTS "Allow service role full access on lead_submissions" ON public.lead_submissions;
 CREATE POLICY "Allow service role full access on lead_submissions" ON public.lead_submissions
+    FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+
+DROP POLICY IF EXISTS "Allow service role full access on lead_submission_questions" ON public.lead_submission_questions;
+CREATE POLICY "Allow service role full access on lead_submission_questions" ON public.lead_submission_questions
     FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
 
 DROP POLICY IF EXISTS "Allow service role full access on audit_logs" ON public.audit_logs;

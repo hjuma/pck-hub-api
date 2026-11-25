@@ -422,6 +422,16 @@ export async function processDownloadRequest(payload: {
   name: string;
   email: string;
   profileType?: string;
+  accepted?: boolean;
+  acceptedAt?: string;
+  download_request?: {
+    questions?: Array<{
+      id: string;
+      type: string;
+      allow_multiple: boolean;
+      options: Array<{ id: string; label: string }>;
+    }>;
+  };
   metadata?: any;
 }, clientIp?: string, userAgent?: string): Promise<{
   success: boolean;
@@ -431,7 +441,16 @@ export async function processDownloadRequest(payload: {
   expiresAt?: string;
   message: string;
 }> {
-  const { publicationId, name, email, profileType = 'standard', metadata = {} } = payload;
+  const {
+    publicationId,
+    name,
+    email,
+    profileType = 'standard',
+    accepted = false,
+    acceptedAt,
+    download_request,
+    metadata = {}
+  } = payload;
 
   // 1. Check if any file under this publication is restricted
   let isRestricted = false;
@@ -456,21 +475,72 @@ export async function processDownloadRequest(payload: {
   let submissionId = `sub-${Math.random().toString(36).substring(2, 11)}`;
   if (isSupabaseConfigured()) {
     try {
-      const { data: subData, error: subErr } = await supabase
+      const insertData: Record<string, any> = {
+        publication_id: publicationId,
+        name,
+        email,
+        metadata,
+        profile_type: profileType,
+        status: initialStatus,
+        accepted: Boolean(accepted),
+        accepted_at: acceptedAt || (accepted ? new Date().toISOString() : null),
+        download_request: download_request || {}
+      };
+
+      let { data: subData, error: subErr } = await supabase
         .from('lead_submissions')
-        .insert({
-          publication_id: publicationId,
-          name,
-          email,
-          metadata,
-          profile_type: profileType,
-          status: initialStatus
-        })
+        .insert(insertData)
         .select('id')
         .single();
 
+      // Graceful fallback if table does not yet have new columns (pre-migration compatibility)
+      if (subErr && (subErr.message?.includes('column') || subErr.code === '42703' || subErr.code === 'PGRST204')) {
+        console.warn('Supabase lead_submissions new columns not found, saving in metadata:', subErr.message);
+        const fallbackMetadata = {
+          ...metadata,
+          accepted: Boolean(accepted),
+          acceptedAt: acceptedAt || (accepted ? new Date().toISOString() : null),
+          download_request: download_request || null
+        };
+        const fallbackRes = await supabase
+          .from('lead_submissions')
+          .insert({
+            publication_id: publicationId,
+            name,
+            email,
+            metadata: fallbackMetadata,
+            profile_type: profileType,
+            status: initialStatus
+          })
+          .select('id')
+          .single();
+        subData = fallbackRes.data;
+        subErr = fallbackRes.error;
+      }
+
       if (!subErr && subData) {
         submissionId = subData.id;
+
+        // If normalized lead_submission_questions table exists and questions are provided, insert into it
+        if (download_request?.questions && Array.isArray(download_request.questions) && download_request.questions.length > 0) {
+          try {
+            const questionRows = download_request.questions.map((q: any) => ({
+              submission_id: submissionId,
+              question_id: q.id || 'unknown',
+              question_type: q.type || 'unknown',
+              allow_multiple: Boolean(q.allow_multiple),
+              options: q.options || []
+            }));
+            const { error: qErr } = await supabase
+              .from('lead_submission_questions')
+              .insert(questionRows);
+            if (qErr) {
+              console.warn('Note: Could not insert into lead_submission_questions (table may need migration):', qErr.message);
+            }
+          } catch (err: any) {
+            console.warn('lead_submission_questions insert fallback:', err.message);
+          }
+        }
       }
     } catch (err: any) {
       console.warn('Supabase lead submission insert fallback:', err.message);
@@ -486,7 +556,13 @@ export async function processDownloadRequest(payload: {
         publication_id: publicationId,
         ip_address: clientIp || 'unknown',
         user_agent: userAgent || 'unknown',
-        details: { email, profileType, status: initialStatus }
+        details: {
+          email,
+          profileType,
+          status: initialStatus,
+          accepted: Boolean(accepted),
+          questionsCount: download_request?.questions?.length || 0
+        }
       });
     } catch (err: any) {
       console.warn('Audit log write error:', err.message);
@@ -522,6 +598,18 @@ export async function getPendingDownloadRequests(): Promise<any[]> {
     try {
       const { data, error } = await supabase
         .from('lead_submissions')
+        .select('*, publications(title, publication_id), lead_submission_questions(*)')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+
+      if (!error && data) {
+        return data;
+      }
+    } catch {}
+
+    try {
+      const { data, error } = await supabase
+        .from('lead_submissions')
         .select('*, publications(title, publication_id)')
         .eq('status', 'pending')
         .order('created_at', { ascending: false });
@@ -542,6 +630,8 @@ export async function getPendingDownloadRequests(): Promise<any[]> {
       email: 'john.doe@example.com',
       profileType: 'standard',
       status: 'pending',
+      accepted: true,
+      acceptedAt: '2026-11-12T10:15:30Z',
       createdAt: new Date().toISOString()
     }
   ];

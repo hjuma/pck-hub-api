@@ -217,7 +217,17 @@ app.get('/v1/publications/:id', authenticate, async (req: Request, res: Response
 // POST /v1/downloads/request (Public lead submission & download request)
 app.post('/v1/downloads/request', async (req: Request, res: Response) => {
   try {
-    const { publicationId, name, email, profileType, metadata } = req.body;
+    const {
+      publicationId,
+      name,
+      email,
+      profileType,
+      accepted,
+      acceptedAt,
+      download_request,
+      metadata
+    } = req.body || {};
+
     if (!publicationId || !name || !email) {
       return res.status(400).json({
         code: 'VALIDATION_ERROR',
@@ -235,10 +245,60 @@ app.post('/v1/downloads/request', async (req: Request, res: Response) => {
       });
     }
 
+    // Validate terms acceptance if explicitly provided as false
+    if (accepted !== undefined && accepted === false) {
+      return res.status(400).json({
+        code: 'TERMS_NOT_ACCEPTED',
+        message: 'Terms must be accepted to request publication downloads.',
+        correlationId: res.getHeader('X-Correlation-ID') as string
+      });
+    }
+
+    // Validate acceptedAt if provided
+    if (acceptedAt !== undefined && typeof acceptedAt === 'string') {
+      const parsedDate = Date.parse(acceptedAt);
+      if (isNaN(parsedDate)) {
+        return res.status(400).json({
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid acceptedAt timestamp format.',
+          correlationId: res.getHeader('X-Correlation-ID') as string
+        });
+      }
+    }
+
+    // Validate download_request structure if provided
+    if (download_request !== undefined) {
+      if (typeof download_request !== 'object' || download_request === null || Array.isArray(download_request)) {
+        return res.status(400).json({
+          code: 'VALIDATION_ERROR',
+          message: 'Field download_request must be an object.',
+          correlationId: res.getHeader('X-Correlation-ID') as string
+        });
+      }
+
+      if (download_request.questions !== undefined && !Array.isArray(download_request.questions)) {
+        return res.status(400).json({
+          code: 'VALIDATION_ERROR',
+          message: 'Field download_request.questions must be an array.',
+          correlationId: res.getHeader('X-Correlation-ID') as string
+        });
+      }
+    }
+
     const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
     const userAgent = req.headers['user-agent'] || 'unknown';
 
-    const result = await processDownloadRequest({ publicationId, name, email, profileType, metadata }, clientIp, userAgent);
+    const result = await processDownloadRequest({
+      publicationId,
+      name,
+      email,
+      profileType,
+      accepted,
+      acceptedAt,
+      download_request,
+      metadata
+    }, clientIp, userAgent);
+
     return res.status(201).json(result);
   } catch (err: any) {
     return res.status(500).json({

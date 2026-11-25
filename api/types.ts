@@ -58,3 +58,75 @@ export interface TaxonomiesResponse {
   geographies: TaxonomyItem[];
   languages: Array<{ code: string; label: string }>;
 }
+
+// Download Request & Lead Capture Types
+export interface DownloadOption {
+  id: string;
+  label: string;
+}
+
+export interface DownloadQuestion {
+  id: string;
+  type: 'multiple_choice' | 'single_choice' | string;
+  allow_multiple: boolean;
+  options: DownloadOption[];
+}
+
+export interface DownloadRequestData {
+  questions: DownloadQuestion[];
+}
+
+export interface DownloadSubmissionPayload {
+  publicationId: string;
+  name: string;
+  email: string;
+  profileType?: string;
+  accepted?: boolean;
+  acceptedAt?: string;
+  download_request?: DownloadRequestData;
+  metadata?: Record<string, any>;
+}
+
+export interface SignedFileUrl {
+  fileId: string;
+  filename: string;
+  signedUrl: string;
+  expiresIn: number;
+  expiresAt: string;
+  mimeType: string;
+}
+
+export interface DownloadRequestResponse {
+  success: boolean;
+  status: 'approved' | 'pending';
+  submissionId?: string;
+  downloadUrls?: SignedFileUrl[];
+  expiresAt?: string;
+  message: string;
+}
+
+export interface LeadSubmissionQuestion {
+  id: string;
+  submission_id: string;
+  question_id: string;
+  question_type: string;
+  allow_multiple: boolean;
+  options: DownloadOption[];
+  created_at: string;
+}
+
+export interface LeadSubmission {
+  id: string;
+  publication_id: string;
+  name: string;
+  email: string;
+  profile_type: string;
+  status: 'pending' | 'approved' | 'rejected';
+  accepted: boolean;
+  accepted_at: string | null;
+  download_request?: DownloadRequestData | null;
+  metadata?: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+

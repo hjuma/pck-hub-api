@@ -1,3 +1,5 @@
+process.env.NODE_ENV = 'test';
+
 import test from 'node:test';
 import assert from 'node:assert';
 import http from 'http';
@@ -142,7 +144,7 @@ test('PC-Kenya Knowledge Hub API Server Test Suite', async (t) => {
     assert.ok(body.correlationId);
   });
 
-  await t.test('POST /v1/downloads/request should validate required fields and email format', async () => {
+  await t.test('POST /v1/downloads/request should validate required fields, email format, terms acceptance, and survey structure', async () => {
     // Missing fields
     const res1 = await fetch(`${url}/v1/downloads/request`, {
       method: 'POST',
@@ -162,9 +164,127 @@ test('PC-Kenya Knowledge Hub API Server Test Suite', async (t) => {
     assert.strictEqual(res2.status, 400);
     const body2 = await res2.json() as any;
     assert.strictEqual(body2.code, 'INVALID_EMAIL');
+
+    // Terms not accepted (accepted === false)
+    const res3 = await fetch(`${url}/v1/downloads/request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        publicationId: 'pub-2026-001',
+        name: 'Jane Doe',
+        email: 'jane.doe@example.com',
+        accepted: false
+      })
+    });
+    assert.strictEqual(res3.status, 400);
+    const body3 = await res3.json() as any;
+    assert.strictEqual(body3.code, 'TERMS_NOT_ACCEPTED');
+
+    // Invalid acceptedAt timestamp format
+    const res4 = await fetch(`${url}/v1/downloads/request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        publicationId: 'pub-2026-001',
+        name: 'Jane Doe',
+        email: 'jane.doe@example.com',
+        accepted: true,
+        acceptedAt: 'invalid-date-stamp'
+      })
+    });
+    assert.strictEqual(res4.status, 400);
+    const body4 = await res4.json() as any;
+    assert.strictEqual(body4.code, 'VALIDATION_ERROR');
+
+    // Invalid download_request (must be object)
+    const res5 = await fetch(`${url}/v1/downloads/request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        publicationId: 'pub-2026-001',
+        name: 'Jane Doe',
+        email: 'jane.doe@example.com',
+        accepted: true,
+        download_request: 'not-an-object'
+      })
+    });
+    assert.strictEqual(res5.status, 400);
+    const body5 = await res5.json() as any;
+    assert.strictEqual(body5.code, 'VALIDATION_ERROR');
+
+    // Invalid download_request.questions (must be array)
+    const res6 = await fetch(`${url}/v1/downloads/request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        publicationId: 'pub-2026-001',
+        name: 'Jane Doe',
+        email: 'jane.doe@example.com',
+        accepted: true,
+        download_request: { questions: 'not-an-array' }
+      })
+    });
+    assert.strictEqual(res6.status, 400);
+    const body6 = await res6.json() as any;
+    assert.strictEqual(body6.code, 'VALIDATION_ERROR');
   });
 
-  await t.test('POST /v1/downloads/request should successfully process valid download request and include publication_id prefix in signed URLs', async () => {
+  await t.test('POST /v1/downloads/request should successfully process new payload with questions and accepted terms', async () => {
+    const newPayload = {
+      publicationId: 'pub-2026-001',
+      name: 'Jane Doe',
+      email: 'jane.doe@example.com',
+      profileType: 'standard',
+      accepted: true,
+      acceptedAt: '2026-11-12T10:15:30Z',
+      download_request: {
+        questions: [
+          {
+            id: 'download_purpose',
+            type: 'multiple_choice',
+            allow_multiple: true,
+            options: [
+              {
+                id: 'secondary_longitudinal_analysis',
+                label: 'Secondary and Longitudinal Analysis'
+              },
+              {
+                id: 'replication_methodological_verification',
+                label: 'Replication and Methodological Verification'
+              }
+            ]
+          },
+          {
+            id: 'downloader_profile_type',
+            type: 'single_choice',
+            allow_multiple: false,
+            options: [
+              {
+                id: 'academic_researcher',
+                label: 'Academic Researcher or Faculty'
+              }
+            ]
+          }
+        ]
+      }
+    };
+
+    const res = await fetch(`${url}/v1/downloads/request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newPayload)
+    });
+    assert.strictEqual(res.status, 201);
+    const body = await res.json() as any;
+    assert.strictEqual(body.success, true);
+    assert.strictEqual(body.status, 'approved');
+    assert.ok(body.submissionId);
+    assert.ok(Array.isArray(body.downloadUrls));
+    assert.ok(body.downloadUrls.length > 0);
+    assert.ok(body.downloadUrls[0].signedUrl.includes('/pub-2026-001/'));
+  });
+
+  await t.test('POST /v1/downloads/request should successfully process legacy download request (backwards compatibility)', async () => {
     const res = await fetch(`${url}/v1/downloads/request`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

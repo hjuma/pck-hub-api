@@ -193,6 +193,55 @@
           }
         }
       }
+    },
+    "/v1/downloads/request": {
+      "post": {
+        "summary": "Submit publication gated download request",
+        "description": "Submits guest lead information, terms acceptance, and optional question answers for a publication. If files are unrestricted, generates secure time-limited signed URLs.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DownloadRequestBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Download request processed successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadRequestResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or terms not accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -450,6 +499,78 @@
             "type": "string",
             "description": "Unique system lookup key for logging traceability."
           }
+        }
+      },
+      "DownloadOption": {
+        "type": "object",
+        "required": ["id", "label"],
+        "properties": {
+          "id": { "type": "string", "example": "secondary_longitudinal_analysis" },
+          "label": { "type": "string", "example": "Secondary and Longitudinal Analysis" }
+        }
+      },
+      "DownloadQuestion": {
+        "type": "object",
+        "required": ["id", "type", "allow_multiple", "options"],
+        "properties": {
+          "id": { "type": "string", "example": "download_purpose" },
+          "type": { "type": "string", "example": "multiple_choice" },
+          "allow_multiple": { "type": "boolean", "example": true },
+          "options": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/DownloadOption" }
+          }
+        }
+      },
+      "DownloadRequestData": {
+        "type": "object",
+        "required": ["questions"],
+        "properties": {
+          "questions": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/DownloadQuestion" }
+          }
+        }
+      },
+      "DownloadRequestBody": {
+        "type": "object",
+        "required": ["publicationId", "name", "email"],
+        "properties": {
+          "publicationId": { "type": "string", "example": "7273340" },
+          "name": { "type": "string", "example": "Jane Doe" },
+          "email": { "type": "string", "format": "email", "example": "jane.doe@example.com" },
+          "profileType": { "type": "string", "default": "standard", "example": "standard" },
+          "accepted": { "type": "boolean", "example": true },
+          "acceptedAt": { "type": "string", "format": "date-time", "example": "2026-11-12T10:15:30Z" },
+          "download_request": { "$ref": "#/components/schemas/DownloadRequestData" },
+          "metadata": { "type": "object" }
+        }
+      },
+      "SignedFileUrl": {
+        "type": "object",
+        "required": ["fileId", "filename", "signedUrl", "expiresIn", "expiresAt", "mimeType"],
+        "properties": {
+          "fileId": { "type": "string" },
+          "filename": { "type": "string" },
+          "signedUrl": { "type": "string" },
+          "expiresIn": { "type": "integer" },
+          "expiresAt": { "type": "string", "format": "date-time" },
+          "mimeType": { "type": "string" }
+        }
+      },
+      "DownloadRequestResponse": {
+        "type": "object",
+        "required": ["success", "status", "message"],
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "status": { "type": "string", "enum": ["approved", "pending"], "example": "approved" },
+          "submissionId": { "type": "string", "example": "sub-abc123xyz" },
+          "downloadUrls": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/SignedFileUrl" }
+          },
+          "expiresAt": { "type": "string", "format": "date-time" },
+          "message": { "type": "string", "example": "Download request approved. Secure download links generated successfully for all publication files." }
         }
       }
     }
